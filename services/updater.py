@@ -177,62 +177,67 @@ def apply_update(new_app_dir: str):
 
 
 def _apply_update_windows(app_dir: str, new_app_dir: str):
-    """Windows: create batch script to replace files."""
-    bat_path = os.path.join(app_dir, "_updater.bat")
-    preserve = " ".join(f'"{p}"' for p in PRESERVE_FOLDERS)
+    """Windows: create PowerShell script to replace files (supports UNC paths)."""
+    ps_path = os.path.join(app_dir, "_updater.ps1")
+    preserve_list = ", ".join(f'"{p}"' for p in PRESERVE_FOLDERS)
 
-    script = f'''@echo off
-chcp 65001 >nul
-echo [VNV TTS Updater] Đang cập nhật...
-echo Đợi ứng dụng đóng...
+    script = f'''# VNV TTS Updater - PowerShell
+$ErrorActionPreference = "SilentlyContinue"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-:wait_loop
-tasklist /FI "IMAGENAME eq {EXE_NAME}" 2>NUL | find /I "{EXE_NAME}" >NUL
-if %ERRORLEVEL%==0 (
-    timeout /t 1 /nobreak >nul
-    goto wait_loop
-)
+$appDir = "{app_dir}"
+$newDir = "{new_app_dir}"
+$exeName = "{EXE_NAME}"
+$preserve = @({preserve_list}, "_updater.ps1", "_update_tmp")
 
-echo Xóa file cũ...
-for /f "delims=" %%i in ('dir /b /a-d "{app_dir}"') do (
-    set "skip=0"
-    for %%p in ({preserve} "_updater.bat" "_update_tmp") do (
-        if /I "%%i"=="%%p" set "skip=1"
-    )
-    if "!skip!"=="0" del /q "{app_dir}\\%%i" 2>nul
-)
+Write-Host "[VNV TTS Updater] Dang cap nhat..."
+Write-Host "Doi ung dung dong..."
 
-for /f "delims=" %%d in ('dir /b /ad "{app_dir}"') do (
-    set "skip=0"
-    for %%p in ({preserve} "_update_tmp") do (
-        if /I "%%d"=="%%p" set "skip=1"
-    )
-    if "!skip!"=="0" rmdir /s /q "{app_dir}\\%%d" 2>nul
-)
+# Wait for exe to close
+$maxWait = 30
+$waited = 0
+while ($waited -lt $maxWait) {{
+    $proc = Get-Process -Name ($exeName -replace '\\.exe$','') -ErrorAction SilentlyContinue
+    if (-not $proc) {{ break }}
+    Start-Sleep -Seconds 1
+    $waited++
+}}
+# Force kill if still running
+$proc = Get-Process -Name ($exeName -replace '\\.exe$','') -ErrorAction SilentlyContinue
+if ($proc) {{ $proc | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2 }}
 
-echo Copy file mới...
-xcopy /s /e /y /q "{new_app_dir}\\*" "{app_dir}\\" >nul
+Write-Host "Xoa file cu..."
+# Delete old files (except preserved)
+Get-ChildItem -Path $appDir -Force | Where-Object {{
+    $preserve -notcontains $_.Name
+}} | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-echo Khởi động lại...
-if exist "{app_dir}\\{EXE_NAME}" (
-    start "" "{app_dir}\\{EXE_NAME}"
-) else (
-    echo Không tìm thấy {EXE_NAME}, vui lòng khởi động thủ công.
-    pause
-)
+Write-Host "Copy file moi..."
+# Copy new files
+Get-ChildItem -Path $newDir -Force | Copy-Item -Destination $appDir -Recurse -Force -ErrorAction SilentlyContinue
 
-echo Dọn dẹp...
-rmdir /s /q "{app_dir}\\_update_tmp" 2>nul
-del "%~f0"
+Write-Host "Khoi dong lai..."
+$exePath = Join-Path $appDir $exeName
+if (Test-Path $exePath) {{
+    Start-Process -FilePath $exePath -WorkingDirectory $appDir
+}} else {{
+    Write-Host "Khong tim thay $exeName, vui long khoi dong thu cong."
+    Read-Host "Nhan Enter de dong"
+}}
+
+Write-Host "Don dep..."
+Start-Sleep -Seconds 2
+Remove-Item -Path (Join-Path $appDir "_update_tmp") -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 '''
-    with open(bat_path, "w", encoding="utf-8") as f:
+    with open(ps_path, "w", encoding="utf-8") as f:
         f.write(script)
 
-    # Launch batch with CREATE_NEW_CONSOLE
-    CREATE_NEW_CONSOLE = 0x00000010
+    # Launch PowerShell hidden (no console window flash)
+    CREATE_NO_WINDOW = 0x08000000
     subprocess.Popen(
-        [bat_path],
-        creationflags=CREATE_NEW_CONSOLE,
+        ["powershell", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", ps_path],
+        creationflags=CREATE_NO_WINDOW,
         close_fds=True,
     )
     os._exit(0)

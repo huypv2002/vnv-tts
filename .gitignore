@@ -8,6 +8,7 @@ outputs_vnv/
 _update_tmp/
 _updater.bat
 _updater.sh
+_updater.ps1
 vnv_login_temp.json
 VNV_TTS_config.json
 node_modules/
