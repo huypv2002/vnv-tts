@@ -269,7 +269,10 @@ class VNVTTSClient:
             '-w', '%{http_code}',
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, timeout=35, text=True)
+            kwargs = {}
+            if sys.platform == 'win32':
+                kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+            result = subprocess.run(cmd, capture_output=True, timeout=35, text=True, **kwargs)
             status_code = result.stdout.strip()
             if status_code == '200' and os.path.exists(output_path) and os.path.getsize(output_path) > 100:
                 return True
