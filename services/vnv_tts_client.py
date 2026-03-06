@@ -16,6 +16,8 @@ from typing import Optional, Callable, List
 from dataclasses import dataclass
 
 import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from .db_config import TTS_WORKER_URLS, TTS_API_KEY
 
@@ -250,40 +252,33 @@ class VNVTTSClient:
 
     def _call_via_curl(self, text: str, voice_id: str, speed: float,
                         output_path: str, proxy_url: str) -> bool:
-        """Gọi Viettel TTS qua curl + proxy HTTP"""
-        payload = json.dumps({
+        """Gọi Viettel TTS qua requests + proxy HTTP (không dùng subprocess)"""
+        payload = {
             'text': text, 'voice': voice_id, 'speed': speed,
             'tts_return_option': 2, 'without_filter': False
-        })
-        cmd = [
-            'curl', '-s', '-x', proxy_url,
-            '-X', 'POST', VIETTEL_API,
-            '-H', 'Content-Type: application/json',
-            '-H', 'Origin: https://viettelai.vn',
-            '-H', 'Referer: https://viettelai.vn/tts',
-            '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            '-d', payload,
-            '-o', output_path,
-            '--connect-timeout', '15',
-            '-m', '30',
-            '-w', '%{http_code}',
-        ]
+        }
+        headers = {
+            'Content-Type': 'application/json',
+            'Origin': 'https://viettelai.vn',
+            'Referer': 'https://viettelai.vn/tts',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        }
+        proxies = {'http': proxy_url, 'https': proxy_url}
         try:
-            kwargs = {}
-            if sys.platform == 'win32':
-                kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
-            result = subprocess.run(cmd, capture_output=True, timeout=35, text=True, **kwargs)
-            status_code = result.stdout.strip()
-            if status_code == '200' and os.path.exists(output_path) and os.path.getsize(output_path) > 100:
+            resp = requests.post(
+                VIETTEL_API, json=payload, headers=headers,
+                proxies=proxies, timeout=30, verify=False
+            )
+            if resp.status_code == 200 and len(resp.content) > 100:
+                with open(output_path, 'wb') as f:
+                    f.write(resp.content)
                 return True
-            elif status_code == '429':
+            elif resp.status_code == 429:
                 return False
             else:
-                if os.path.exists(output_path):
-                    os.remove(output_path)
                 return False
         except Exception as e:
-            self.log(f"⚠️ curl error: {e}")
+            self.log(f"⚠️ request error: {e}")
             if os.path.exists(output_path):
                 os.remove(output_path)
             return False
@@ -291,7 +286,7 @@ class VNVTTSClient:
 
     def _call_via_proxy(self, text: str, voice_id: str, speed: float,
                          output_path: str) -> bool:
-        """Gọi Viettel TTS trực tiếp qua proxy xoay bằng curl"""
+        """Gọi Viettel TTS trực tiếp qua proxy xoay"""
         max_proxy_tries = 5
         for i in range(max_proxy_tries):
             if self._stop_event.is_set():
@@ -300,7 +295,7 @@ class VNVTTSClient:
             if not proxy_dict:
                 self._sleep(1)
                 continue
-            proxy_url = proxy_dict['http'].replace('http://', '')  # curl -x cần ip:port
+            proxy_url = proxy_dict['http']  # requests cần full URL http://...
             ip = proxy_dict.get('ip', '?')
             ok = self._call_via_curl(text, voice_id, speed, output_path, proxy_url)
             if ok:
