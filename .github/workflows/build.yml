@@ -1,0 +1,112 @@
+name: Build Windows EXE
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: pip-win-py313-${{ hashFiles('requirements.txt') }}
+          restore-keys: pip-win-py313-
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip wheel setuptools
+          pip install -r requirements.txt
+          pip install nuitka ordered-set zstandard
+
+      - name: Build with Nuitka (standalone)
+        run: |
+          python -m nuitka `
+            --standalone `
+            --windows-console-mode=disable `
+            --output-filename=vnv_tts_app.exe `
+            --enable-plugin=pyside6 `
+            --jobs=4 `
+            --lto=no `
+            --include-package=services `
+            --include-package=requests `
+            --include-package=urllib3 `
+            --include-package=charset_normalizer `
+            --include-module=PySide6.QtMultimedia `
+            --include-package-data=PySide6 `
+            --include-package-data=certifi `
+            --nofollow-import-to=tkinter `
+            --nofollow-import-to=_tkinter `
+            --nofollow-import-to=PyQt6 `
+            --nofollow-import-to=PyQt5 `
+            --nofollow-import-to=PySide2 `
+            --nofollow-import-to=matplotlib `
+            --nofollow-import-to=numpy `
+            --nofollow-import-to=pandas `
+            --nofollow-import-to=scipy `
+            --nofollow-import-to=test `
+            --nofollow-import-to=unittest `
+            --no-pyi-file `
+            --assume-yes-for-downloads `
+            vnv_tts_app.py
+
+      - name: Create data folders
+        run: |
+          $dist = "vnv_tts_app.dist"
+          New-Item -ItemType Directory -Force -Path "$dist\outputs_vnv"
+          # Copy services config
+          if (Test-Path "$dist\services") {
+            echo "Services folder included"
+          }
+
+      - name: Verify build output
+        run: |
+          $exe = "vnv_tts_app.dist\vnv_tts_app.exe"
+          if (Test-Path $exe) {
+            $size = (Get-Item $exe).Length
+            $sizeMB = [math]::Round($size / 1MB, 2)
+            echo "Build OK! EXE size: ${sizeMB} MB"
+          } else {
+            echo "ERROR: vnv_tts_app.exe not found!"
+            Get-ChildItem -Recurse "vnv_tts_app.dist" -Filter "*.exe" | ForEach-Object { echo $_.FullName }
+            exit 1
+          }
+
+      - name: Package as ZIP
+        run: |
+          Rename-Item "vnv_tts_app.dist" "VNV-TTS"
+          Compress-Archive -Path "VNV-TTS" -DestinationPath "VNV-TTS-windows.zip" -Force
+          $size = (Get-Item "VNV-TTS-windows.zip").Length
+          $sizeMB = [math]::Round($size / 1MB, 2)
+          echo "ZIP size: ${sizeMB} MB"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VNV-TTS-windows
+          path: VNV-TTS-windows.zip
+          retention-days: 30
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: VNV-TTS-windows.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
