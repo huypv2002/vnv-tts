@@ -1,0 +1,59 @@
+# Core GUI Framework
+ttkbootstrap>=1.10.1
+PySide6>=6.6.0
+
+# Database & API
+supabase>=2.0.0
+requests>=2.31.0
+
+# Cryptography
+cryptography>=41.0.0
+
+# Configuration
+appdirs>=1.4.4
+
+# Cloud Storage (R2/Cloudflare)
+boto3>=1.28.0
+botocore>=1.31.0
+
+# Supabase dependencies (auto-installed with supabase)
+postgrest>=0.13.0
+storage>=0.7.0
+gotrue>=1.2.0
+realtime>=1.0.0
+
+# WebSocket support
+websockets>=11.0
+yt-dlp
+zendriver>=0.15.2
+
+# Data validation
+pydantic>=2.0.0
+pydantic-core>=2.0.0
+
+# HTTP dependencies (auto-installed with requests)
+certifi>=2023.7.22
+charset-normalizer>=3.2.0
+urllib3>=2.0.0
+idna>=3.4
+
+# JWT
+PyJWT>=2.8.0
+
+# Cryptography dependencies
+bcrypt>=4.0.0
+
+# Date utilities
+python-dateutil>=2.8.2
+
+# AWS SDK dependencies
+s3transfer>=0.6.0
+jmespath>=1.0.1
+
+# Type hints
+typing-extensions>=4.8.0
+annotated-types>=0.6.0
+
+
+# FFmpeg binary
+imageio-ffmpeg>=0.4.9
