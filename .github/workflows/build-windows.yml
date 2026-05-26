@@ -37,7 +37,8 @@ jobs:
           pip install gotrue realtime storage3
           
           # Install other dependencies
-          pip install requests pydantic cryptography appdirs boto3 websockets PyJWT bcrypt pydub tls-client camoufox
+          pip install requests pydantic cryptography appdirs boto3 websockets PyJWT bcrypt pydub tls-client "camoufox[geoip]"
+          python -m camoufox fetch
           
           # Install Nuitka
           pip install nuitka ordered-set zstandard
@@ -51,6 +52,7 @@ jobs:
           python -c "import pydub; print('pydub OK')"
           python -c "import tls_client; print('tls-client OK')"
           python -c "import camoufox; print('camoufox OK')"
+          python -m camoufox path
 
       - name: Download FFmpeg
         run: |
@@ -63,6 +65,9 @@ jobs:
 
       - name: Build with Nuitka
         run: |
+          $camoufoxExe = python -m camoufox path
+          $camoufoxDir = Split-Path -Parent $camoufoxExe
+          Write-Host "Bundling Camoufox from $camoufoxDir"
           python -m nuitka `
             --standalone `
             --onefile `
@@ -92,6 +97,9 @@ jobs:
             --include-package=pydub `
             --include-package=tls_client `
             --include-package=camoufox `
+            --include-module=preview_client `
+            --include-module=proxy_pool `
+            --include-module=token_solver `
             --include-package=services `
             --include-package=models `
             --include-package=ui `
@@ -105,6 +113,7 @@ jobs:
             --include-data-dir=services=services `
             --include-data-dir=models=models `
             --include-data-dir=ui=ui `
+            --include-data-dir="$camoufoxDir=camoufox" `
             --include-data-file=ffmpeg.exe=ffmpeg.exe `
             --include-data-file=ffprobe.exe=ffprobe.exe `
             --nofollow-import-to=tkinter `

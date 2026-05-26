@@ -4,11 +4,14 @@ Logic từ elevenlabs_api_pool.py (đang chạy trên server)
 """
 import asyncio
 import json
+import os
 import random
 import re
+import sys
 import time
 import warnings
 from collections import deque
+from pathlib import Path
 
 import httpx
 import jwt
@@ -25,6 +28,26 @@ _hsw_js_cache: dict[str, str] = {}
 SITEKEY = "8e58fe8c-1a48-4f94-88ae-8e90b586a192"
 HOST = "elevenlabs.io"
 TOKEN_TTL = 100  # seconds — token hết hạn sau ~120s, dùng 100s cho an toàn
+
+
+def _bundled_camoufox_options(proxy_http: str) -> dict:
+    opts = {
+        "headless": True,
+        "os": "windows",
+        "proxy": {"server": proxy_http},
+    }
+
+    exe_name = "camoufox.exe" if sys.platform.startswith("win") else "camoufox-bin"
+    for base in (
+        Path(__file__).resolve().parent,
+        Path(sys.executable).resolve().parent,
+        Path.cwd(),
+    ):
+        exe = base / "camoufox" / exe_name
+        if exe.exists():
+            opts["executable_path"] = exe
+            break
+    return opts
 
 
 def get_hcaptcha_materials(proxy_http: str) -> tuple[str, str, dict]:
@@ -305,7 +328,7 @@ class TokenPool:
 
                 # Launch/reuse browser
                 if not browser:
-                    browser = await AsyncCamoufox(headless=True, os='windows', proxy={'server': proxy["http"]}).start()
+                    browser = await AsyncCamoufox(**_bundled_camoufox_options(proxy["http"])).start()
 
                 # Solve parallel
                 tasks = [
@@ -344,7 +367,7 @@ class TokenPool:
                         self._log(f"[solver-{worker_id}] pre-fetch proxy...")
                         try:
                             new_proxy = await self.proxy_pool.get_proxy_for_solve()
-                            new_browser = await AsyncCamoufox(headless=True, os='windows', proxy={'server': new_proxy["http"]}).start()
+                            new_browser = await AsyncCamoufox(**_bundled_camoufox_options(new_proxy["http"])).start()
                             if browser:
                                 try: await browser.stop()
                                 except: pass
