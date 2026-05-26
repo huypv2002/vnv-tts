@@ -70,8 +70,8 @@ jobs:
           Write-Host "Bundling Camoufox from $camoufoxDir"
           python -m nuitka `
             --standalone `
-            --onefile `
             --windows-console-mode=disable `
+            --output-dir=dist `
             --output-filename=Elevenlabs_Unlimited.exe `
             --enable-plugin=pyside6 `
             --enable-plugin=anti-bloat `
@@ -141,14 +141,15 @@ jobs:
 
       - name: Verify output
         run: |
-          dir Elevenlabs_Unlimited.exe
+          dir dist\11Labs0811.dist\Elevenlabs_Unlimited.exe
+          dir dist\11Labs0811.dist\camoufox\camoufox.exe
           echo "Build successful!"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Elevenlabs_Unlimited-windows
-          path: Elevenlabs_Unlimited.exe
+          path: dist/11Labs0811.dist/**
           retention-days: 30
 
       - name: Create Release
