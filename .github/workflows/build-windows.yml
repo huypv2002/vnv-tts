@@ -65,9 +65,12 @@ jobs:
 
       - name: Build with Nuitka
         run: |
-          $camoufoxExe = python -m camoufox path
-          $camoufoxDir = Split-Path -Parent $camoufoxExe
+          $camoufoxPath = python -m camoufox path
+          $camoufoxDir = Split-Path -Parent $camoufoxPath
+          $camoufoxExe = Get-ChildItem -Path $camoufoxDir -Recurse -Filter camoufox.exe | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $camoufoxExe) { throw "camoufox.exe not found under $camoufoxDir" }
           Write-Host "Bundling Camoufox from $camoufoxDir"
+          Write-Host "Camoufox exe: $camoufoxExe"
           python -m nuitka `
             --standalone `
             --windows-console-mode=disable `
