@@ -114,6 +114,7 @@ jobs:
             --include-data-dir=models=models `
             --include-data-dir=ui=ui `
             --include-data-dir="$camoufoxDir=camoufox" `
+            --include-data-file="$camoufoxExe=camoufox/camoufox.exe" `
             --include-data-file=ffmpeg.exe=ffmpeg.exe `
             --include-data-file=ffprobe.exe=ffprobe.exe `
             --nofollow-import-to=tkinter `
