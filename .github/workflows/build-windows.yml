@@ -37,7 +37,7 @@ jobs:
           pip install gotrue realtime storage3
           
           # Install other dependencies
-          pip install requests pydantic cryptography appdirs boto3 websockets PyJWT bcrypt pydub
+          pip install requests pydantic cryptography appdirs boto3 websockets PyJWT bcrypt pydub tls-client camoufox
           
           # Install Nuitka
           pip install nuitka ordered-set zstandard
@@ -49,6 +49,8 @@ jobs:
           python -c "import certifi; print('certifi:', certifi.where())"
           python -c "import boto3; print('boto3 OK')"
           python -c "import pydub; print('pydub OK')"
+          python -c "import tls_client; print('tls-client OK')"
+          python -c "import camoufox; print('camoufox OK')"
 
       - name: Download FFmpeg
         run: |
@@ -88,6 +90,8 @@ jobs:
             --include-package=appdirs `
             --include-package=boto3 `
             --include-package=pydub `
+            --include-package=tls_client `
+            --include-package=camoufox `
             --include-package=services `
             --include-package=models `
             --include-package=ui `

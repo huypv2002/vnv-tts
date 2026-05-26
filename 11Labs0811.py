@@ -4191,6 +4191,8 @@ class MainWindow(QtWidgets.QMainWindow):
                         }
                     """)
                     btn_close.clicked.connect(self.reject)
+                    btn_close.setAutoDefault(False)
+                    btn_close.setDefault(False)
                     close_layout.addWidget(btn_close)
                     layout.addLayout(close_layout)
                     
@@ -4287,6 +4289,8 @@ class MainWindow(QtWidgets.QMainWindow):
                         }
                     """)
                     layout.addWidget(self.btn_login)
+                    self.btn_login.setAutoDefault(True)
+                    self.btn_login.setDefault(True)
                     
                     layout.addSpacing(18)
                     
@@ -4310,6 +4314,8 @@ class MainWindow(QtWidgets.QMainWindow):
                         }
                     """)
                     self.btn_exit.clicked.connect(self.exit_app)
+                    self.btn_exit.setAutoDefault(False)
+                    self.btn_exit.setDefault(False)
                     layout.addWidget(self.btn_exit)
                     
                     layout.addStretch()
@@ -4323,7 +4329,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     # Connections
                     self.btn_login.clicked.connect(self.do_login)
                     self.username.returnPressed.connect(lambda: self.password.setFocus())
-                    self.password.returnPressed.connect(self.do_login)
+                    self.password.installEventFilter(self)
                     
                     self.login_result = None
                     
@@ -4378,9 +4384,39 @@ class MainWindow(QtWidgets.QMainWindow):
                         self.accept()
                         
                     except Exception as e:
+                        self._write_login_error(e)
                         self.show_error(f"Lỗi kết nối: {str(e)[:50]}")
                         self.btn_login.setEnabled(True)
                         self.btn_login.setText("ĐĂNG NHẬP")
+
+                def eventFilter(self, obj, event):
+                    if obj is self.password and event.type() == QtCore.QEvent.KeyPress:
+                        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                            self.do_login()
+                            return True
+                    return super().eventFilter(obj, event)
+
+                def keyPressEvent(self, event):
+                    if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                        if self.username.hasFocus():
+                            self.password.setFocus()
+                        else:
+                            self.do_login()
+                        event.accept()
+                        return
+                    super().keyPressEvent(event)
+
+                def _write_login_error(self, err):
+                    try:
+                        import traceback
+                        log_path = os.path.join(APP_DIR, "login_error.log")
+                        with open(log_path, "a", encoding="utf-8") as f:
+                            f.write("\n" + "=" * 60 + "\n")
+                            f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n")
+                            f.write(f"Login error: {err}\n")
+                            f.write(traceback.format_exc())
+                    except Exception:
+                        pass
                 
                 def center_on_screen(self):
                     """Căn dialog ra giữa màn hình"""

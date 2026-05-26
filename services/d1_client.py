@@ -9,6 +9,7 @@ import json
 import threading
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
+from urllib.parse import urlencode
 import requests
 
 
@@ -143,7 +144,7 @@ class QueryBuilder:
         params = []
         
         if self._method == "GET":
-            params.append(f"select={self._select_cols}")
+            params.append(("select", self._select_cols))
         
         for col, op, val in self._filters:
             # Convert boolean to integer for SQLite compatibility
@@ -151,19 +152,19 @@ class QueryBuilder:
                 val = 1 if val else 0
             
             if op == "eq":
-                params.append(f"{col}={val}")
+                params.append((col, val))
             else:
-                params.append(f"{col}.{op}={val}")
+                params.append((f"{col}.{op}", val))
         
         if self._limit:
-            params.append(f"limit={self._limit}")
+            params.append(("limit", self._limit))
         if self._offset:
-            params.append(f"offset={self._offset}")
+            params.append(("offset", self._offset))
         if self._order:
-            params.append(f"order={self._order}")
+            params.append(("order", self._order))
         
         if params:
-            url += "?" + "&".join(params)
+            url += "?" + urlencode(params)
         
         return url
     
