@@ -40,10 +40,18 @@ except ImportError as e:
     SERVICES_AVAILABLE = False
 
 # ========== Preview TTS Backend (HSW + TokenPool) ==========
-import asyncio
-from preview_client import PreviewClient, DummyKeyManager
-from proxy_pool import ProxyPool
-from token_solver import TokenPool
+try:
+    import asyncio
+    from preview_client import PreviewClient, DummyKeyManager
+    from proxy_pool import ProxyPool
+    from token_solver import TokenPool
+    PREVIEW_BACKEND_AVAILABLE = True
+    PREVIEW_BACKEND_IMPORT_ERROR = None
+except Exception as e:
+    import asyncio
+    PreviewClient = DummyKeyManager = ProxyPool = TokenPool = None
+    PREVIEW_BACKEND_AVAILABLE = False
+    PREVIEW_BACKEND_IMPORT_ERROR = e
 
 APP_NAME = "HuyViet_AutoTTS"
 ELEVEN_BASE = "https://api.elevenlabs.io"
@@ -4514,49 +4522,83 @@ class MainWindow(QtWidgets.QMainWindow):
         # state
         self.s = load_settings()
         
-        # ========== Preview Mode: TokenPool + ProxyPool ==========
-        self.keys = DummyKeyManager()
-        
-        # Init proxy pool - lấy proxy key từ D1 database (sau login) hoặc settings
-        proxy_keys = []
-        if hasattr(self, 'proxy_service_db') and self.proxy_service_db:
-            # Lấy proxy key từ D1 database
-            try:
-                for p in getattr(self.proxy_service_db, '_proxies', []):
-                    if p.get('type') == 'proxyxoay' and p.get('api_key'):
-                        proxy_keys.append(p['api_key'].strip())
-                if proxy_keys:
-                    self.log(f"[Preview] Loaded {len(proxy_keys)} proxy key(s) from D1")
-            except Exception as e:
-                self.log(f"[Preview] ⚠️ Error loading proxy from D1: {e}")
-        
-        # Fallback: lấy từ settings
-        if not proxy_keys:
-            if hasattr(self.s, 'proxyxoay_key') and self.s.proxyxoay_key:
-                proxy_keys = [k.strip() for k in self.s.proxyxoay_key.split(',') if k.strip()]
-        
-        self._async_loop = asyncio.new_event_loop()
-        self._async_thread = threading.Thread(target=self._async_loop.run_forever, daemon=True)
-        self._async_thread.start()
-        
-        self.proxy_pool = ProxyPool(proxy_keys)
-        num_solvers = max(1, len(proxy_keys))  # Dynamic: 1 solver = 1 proxy key
-        self.token_pool = TokenPool(self.proxy_pool, target_size=10, max_solvers=num_solvers)
-        self.token_pool.set_log_callback(lambda msg: self.log(msg))
-        
-        # Start token pool nếu có proxy keys
-        if proxy_keys:
-            asyncio.run_coroutine_threadsafe(self.token_pool.start(), self._async_loop)
-            self.log(f"[Preview] TokenPool started: {num_solvers} solver(s) = {len(proxy_keys)} proxy key(s), target=10")
+        self._async_loop = None
+        self._async_thread = None
+        self.proxy_pool = None
+        self.token_pool = None
+
+        if PREVIEW_BACKEND_AVAILABLE:
+            # ========== Preview Mode: TokenPool + ProxyPool ==========
+            self.keys = DummyKeyManager()
+
+            # Init proxy pool - lấy proxy key từ D1 database (sau login) hoặc settings
+            proxy_keys = []
+            if hasattr(self, 'proxy_service_db') and self.proxy_service_db:
+                # Lấy proxy key từ D1 database
+                try:
+                    for p in getattr(self.proxy_service_db, '_proxies', []):
+                        if p.get('type') == 'proxyxoay' and p.get('api_key'):
+                            proxy_keys.append(p['api_key'].strip())
+                    if proxy_keys:
+                        self.log(f"[Preview] Loaded {len(proxy_keys)} proxy key(s) from D1")
+                except Exception as e:
+                    self.log(f"[Preview] ⚠️ Error loading proxy from D1: {e}")
+
+            # Fallback: lấy từ settings
+            if not proxy_keys:
+                if hasattr(self.s, 'proxyxoay_key') and self.s.proxyxoay_key:
+                    proxy_keys = [k.strip() for k in self.s.proxyxoay_key.split(',') if k.strip()]
+
+            self._async_loop = asyncio.new_event_loop()
+            self._async_thread = threading.Thread(target=self._async_loop.run_forever, daemon=True)
+            self._async_thread.start()
+
+            self.proxy_pool = ProxyPool(proxy_keys)
+            num_solvers = max(1, len(proxy_keys))  # Dynamic: 1 solver = 1 proxy key
+            self.token_pool = TokenPool(self.proxy_pool, target_size=10, max_solvers=num_solvers)
+            self.token_pool.set_log_callback(lambda msg: self.log(msg))
+
+            # Start token pool nếu có proxy keys
+            if proxy_keys:
+                asyncio.run_coroutine_threadsafe(self.token_pool.start(), self._async_loop)
+                self.log(f"[Preview] TokenPool started: {num_solvers} solver(s) = {len(proxy_keys)} proxy key(s), target=10")
+            else:
+                self.log("[Preview] ⚠️ Chưa có proxy key - thêm trong Cài đặt nâng cao")
+
+            self.client = PreviewClient(self.proxy_pool, self.token_pool, self.log, self.s)
+            self.client.keys = self.keys  # ChunkWorker truy cập self.client.keys
         else:
-            self.log("[Preview] ⚠️ Chưa có proxy key - thêm trong Cài đặt nâng cao")
-        
-        self.client = PreviewClient(self.proxy_pool, self.token_pool, self.log, self.s)
-        self.client.keys = self.keys  # ChunkWorker truy cập self.client.keys
-        
-        # Dummy proxies cho compatibility
-        self.proxies = ProxyManager()
-        self.proxies.set_log_fn(self.log)
+            self.log(f"[Preview] Disabled: {PREVIEW_BACKEND_IMPORT_ERROR}")
+
+            # Fallback về key/proxy flow cũ để app vẫn mở khi thiếu preview dependencies.
+            self.keys = KeyManager()
+            if hasattr(self, 'key_pool_db') and self.key_pool_db and len(self.key_pool_db._keys) > 0:
+                self._sync_keys_from_db()
+                self.keys.set_key_pool_db(self.key_pool_db)
+                self.log(f"[Keys] Loaded {len(self.keys.keys)} keys from DATABASE (State Machine enabled)")
+            elif self.s.keys_file:
+                self.keys.load(self.s.keys_file)
+                self.log(f"[Keys] Loaded {len(self.keys.keys)} keys from FILE: {self.s.keys_file}")
+            else:
+                self.log("[Keys] ⚠️ No keys loaded - neither DB nor file")
+
+            self.proxies = ProxyManager()
+            self.proxies.set_log_fn(self.log)
+            if hasattr(self, 'proxy_service_db') and self.proxy_service_db:
+                self._sync_proxy_from_db()
+                self.log("[Proxy] Loaded from DATABASE")
+            else:
+                self.proxies.set(self.s.proxies_text, self.s.proxy_phase_log)
+                self.proxies.enabled = getattr(self.s, "proxy_enabled", False)
+                self.log(f"[Proxy] Loaded from CONFIG: enabled={self.proxies.enabled}")
+
+            self.client = ElevenClient(self.keys, self.proxies, self.log, self.s)
+            self.keys.set_client(self.client, self.log)
+
+        if not hasattr(self, "proxies") or self.proxies is None:
+            # Dummy proxies cho compatibility
+            self.proxies = ProxyManager()
+            self.proxies.set_log_fn(self.log)
 
         # sequential queue
         self.queue_paths: List[str] = []
@@ -5082,7 +5124,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.critical(self, "Lỗi thêm proxy key", str(e))
 
     def _add_proxy_keys_to_preview_pool(self, keys: List[str]):
-        if not keys or not hasattr(self, "proxy_pool") or not hasattr(self, "_async_loop"):
+        if not keys or not getattr(self, "proxy_pool", None) or not getattr(self, "_async_loop", None):
             return
 
         async def _update_pool():
@@ -5344,12 +5386,12 @@ class MainWindow(QtWidgets.QMainWindow):
                     if proxy.get("type") == "proxyxoay" and proxy.get("api_key"):
                         keys.append(proxy["api_key"].strip())
 
-            if hasattr(self, "proxy_pool"):
+            if getattr(self, "proxy_pool", None):
                 self.proxy_pool.keys = list(dict.fromkeys(keys))
                 self.proxy_pool._key_idx = 0
                 self.proxy_pool._ip_usage = {}
                 self.proxy_pool._current_proxies = {}
-                if hasattr(self, "token_pool"):
+                if getattr(self, "token_pool", None) and getattr(self, "_async_loop", None):
                     if keys:
                         fut = asyncio.run_coroutine_threadsafe(self.token_pool.restart_solvers(), self._async_loop)
                     else:
@@ -8697,17 +8739,28 @@ class MainWindow(QtWidgets.QMainWindow):
 # ---- run ----
 
 def main():
-    app = QtWidgets.QApplication([])
-    
-    w = MainWindow()
-    w.show()
-    
-    exit_code = app.exec()
-    
-    # Flush logs
-    flush_all_logs()
-    
-    os._exit(exit_code)
+    try:
+        app = QtWidgets.QApplication([])
+
+        w = MainWindow()
+        w.show()
+
+        exit_code = app.exec()
+
+        # Flush logs
+        flush_all_logs()
+
+        os._exit(exit_code)
+    except Exception:
+        import traceback
+        crash_path = os.path.join(APP_DIR, "startup_crash.log")
+        with open(crash_path, "w", encoding="utf-8") as f:
+            f.write(traceback.format_exc())
+        try:
+            QtWidgets.QMessageBox.critical(None, "Startup Error", f"App lỗi khi mở.\nLog: {crash_path}")
+        except Exception:
+            pass
+        raise
 
 if __name__=="__main__":
     main()
